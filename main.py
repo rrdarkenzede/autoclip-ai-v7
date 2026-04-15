@@ -818,8 +818,7 @@ if __name__ == "__main__":
     # Start OMEGA Sidecar
     from omega_bypass import omega
     omega.start_sidecar()
-    try:
-        # Main Logic...
+
     ckpt = _get_checkpoint()
     if ckpt and choice in ["1", "2", "3", "4", "5"]:
         # Auto-resume in CLI mode or choice 3
