@@ -1,0 +1,43 @@
+name: AutoClipAI Daily Cycle
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Every night at 3 AM
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  run-autoclip:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python Dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Run AutoClipAI Cycle
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_DRIVE_CREDENTIALS: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          TIKTOK_COOKIES: ${{ secrets.TIKTOK_COOKIES }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+          TIKTOK_PROFILE_URL: ${{ secrets.TIKTOK_PROFILE_URL }}
+          YOUTUBE_CHANNEL_URL: ${{ secrets.YOUTUBE_CHANNEL_URL }}
+        run: |
+          # Use mode 2 (Full Cycle)
+          python main.py --mode 2

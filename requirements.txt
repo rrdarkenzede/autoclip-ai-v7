@@ -1,0 +1,13 @@
+yt-dlp
+google-genai
+ffmpeg-python
+playwright
+supabase
+python-dotenv
+schedule
+feedparser
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+pydrive2
+requests
