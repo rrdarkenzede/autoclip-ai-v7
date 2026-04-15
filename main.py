@@ -779,22 +779,22 @@ if __name__ == "__main__":
     # 1. Parse Arguments (CLI support)
     parser = argparse.ArgumentParser(description="AutoClipAI v6.1")
     parser.add_argument("--mode", type=str, help="1-8: Mode to launch")
-    parser.add_argument("--url", type=str, help="YouTube URL for m    print(r"""
+    parser.add_argument("--url", type=str, help="YouTube URL for manual mode")
+    args = parser.parse_args()
+
+    # 2. Welcome Banner
+    print(r"""
     ╔═══════════════════════════════════════════════════════╗
     ║     _         _         ____ _ _            _    ___  ║
     ║    / \  _   _| |_ ___  / ___| (_)_ __      / \  |_ _|║
     ║   / _ \| | | | __/ _ \| |   | | | '_ \    / _ \  | | ║
     ║  / ___ \ |_| | || (_) | |___| | | |_) |  / ___ \  | |  ║
     ║ /_/   \_\__,_|\__\___/ \____|_|_| .__/  /_/   \_\___| ║
-    ║                                 |_| v7.0 PHANTOM OMEGA    ║
+    ║                                 |_| v7.0 PHANTOM OMEGA║
     ╠═══════════════════════════════════════════════════════╣
     ║  🌌 OMEGA Bypass  💎 PO-Token Proof  🕵️ Invidious Gateway ║
     ╚═══════════════════════════════════════════════════════╝
     """)
-                           |_| v6.9 PHANTOM REBIRTH ║
-    ╠═══════════════════════════════════════════════════════╣
-    ║  🧠 Adaptive AI  📦 Stockpile  🔍 Reddit+X Scanner  ║
-    ╚═══════════════════════════════════════════════════════╝
     """)
     
     # 3. Mode selection
