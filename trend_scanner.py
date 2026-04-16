@@ -1,6 +1,6 @@
 """
-trend_scanner.py — Viral Content Discovery v7.5 (BANGER HUNTER)
-ADVANCED EXTRACTION: Optimized for Redlib JSON and resilient scraping.
+trend_scanner.py — Viral Content Discovery v7.6 (SYNTAX STABILIZED)
+URL FIX: Corrected .json path and added verbose HTTP logging.
 """
 
 import re
@@ -48,7 +48,6 @@ def _extract_video_urls(text):
 def _recursive_extract_urls(data):
     """
     Scans a JSON object (dict/list) recursively for social media URLs.
-    Ensures no URL is missed regardless of the field name.
     """
     found = []
     if isinstance(data, dict):
@@ -74,29 +73,47 @@ def _normalize_yt(url):
 def _fetch_via_redlib(sub, time_filter="week"):
     """
     Fallback: Scrapes data via Redlib. 
-    Verifies that 'data' exists before returning success.
+    FIXED: Corrected URL path from /top/.json to /top.json
     """
     random.shuffle(REDLIB_INSTANCES)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
+    
     for inst in REDLIB_INSTANCES:
         try:
-            url = f"https://{inst}/r/{sub}/top/.json?t={time_filter}"
-            log.info(f"  [DISCOVERY] Querying: {url}")
-            resp = requests.get(url, impersonate="chrome110", timeout=12)
+            # CORRECT SYNTAX: r/sub/top.json?t=week
+            url = f"https://{inst}/r/{sub}/top.json?t={time_filter}"
+            log.info(f"  [DISCOVERY] Calling: {url}")
+            
+            resp = requests.get(
+                url, 
+                impersonate="chrome110", 
+                headers=headers,
+                timeout=15
+            )
+            
             if resp.status_code == 200:
-                data = resp.json()
-                # Validate that it's a real Reddit-like listing
-                if isinstance(data, dict) and 'data' in data and 'children' in data['data']:
-                    log.info(f"  [REDLIB] ✓ Success via {inst} (Found {len(data['data']['children'])} posts)")
-                    return data
-                else:
-                    log.warning(f"  [REDLIB] ⚠ Empty or invalid JSON from {inst}")
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict) and 'data' in data:
+                        log.info(f"  [REDLIB] ✓ Success via {inst}")
+                        return data
+                except:
+                    log.warning(f"  [REDLIB] ⚠ {inst} returned non-JSON content.")
+            else:
+                log.warning(f"  [REDLIB] ✗ {inst} failed with HTTP {resp.status_code}")
+                
         except Exception as e:
+            log.debug(f"  [REDLIB] ✗ {inst} error: {str(e)}")
             continue
+            
     return None
 
 def scan_reddit_for_viral_videos(custom_subs=None, time_filter="week", limit=30):
     """
-    Main Reddit Discovery: Stealth Brute Force v7.5.
+    Main Reddit Discovery: Stealth Brute Force v7.6.
     """
     subs = list(DEFAULT_SUBS)
     if custom_subs:
@@ -105,19 +122,17 @@ def scan_reddit_for_viral_videos(custom_subs=None, time_filter="week", limit=30)
             if s_clean and s_clean not in subs: subs.append(s_clean)
 
     found_videos = []
-    log.info(f"🕵️ Hunting in {len(subs)} subreddits (Filter: {time_filter})...")
+    log.info(f"🕵️ Total Hunting Ground: {len(subs)} subreddits (Filter: {time_filter})")
 
     for sub in subs:
         log.info(f"  [REDDIT] Checking r/{sub}...")
-        
-        # 🟢 Try Redlib Fallback (Direct Reddit is skipped as it always 403s on GH)
         data = _fetch_via_redlib(sub, time_filter)
             
         if data:
             posts = data.get("data", {}).get("children", [])
+            log.info(f"    - Found {len(posts)} posts in r/{sub}.")
             for post in posts:
                 pd = post.get("data", {})
-                # Use recursive extraction on the entire post object to find ANY hidden URL
                 urls = _recursive_extract_urls(pd)
                 for u in urls:
                     found_videos.append({
@@ -126,28 +141,26 @@ def scan_reddit_for_viral_videos(custom_subs=None, time_filter="week", limit=30)
                         "title": pd.get("title", "")
                     })
         
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(random.uniform(1.0, 2.0))
 
-    # Sort by score
+    # Sort
     found_videos.sort(key=lambda x: x["score"], reverse=True)
     unique_urls = list(dict.fromkeys([v["url"] for v in found_videos]))
     
-    log.info(f"✅ Reddit Scan Complete: {len(unique_urls)} bangers identified.")
+    log.info(f"✅ FINAL Discovery result: {len(unique_urls)} bangers identified.")
     return {"urls": unique_urls}
 
 def discover_viral_content():
     log.info("\n" + "🎯" * 20)
-    log.info("STARTING DISCOVERY: BANGER HUNTER v7.5")
+    log.info("STARTING DISCOVERY: BANGER HUNTER v7.6")
     log.info("🎯" * 20)
     
     all_urls = []
-    
-    # We focus on Reddit as it's the most reliable source for high-score JSON.
     try:
         reddit_res = scan_reddit_for_viral_videos()
         all_urls.extend(reddit_res["urls"])
     except Exception as e:
-        log.error(f"❌ Reddit failure: {e}")
+        log.error(f"❌ Master Discovery failed: {e}")
         
     unique_total = list(dict.fromkeys(all_urls))
     log.info(f"\n🏆 GRAND TOTAL: {len(unique_total)} unique links discovered.")
