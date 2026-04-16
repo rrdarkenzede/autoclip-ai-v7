@@ -1,6 +1,7 @@
 """
-trend_scanner.py — Viral Content Discovery v7.6 (SYNTAX STABILIZED)
-URL FIX: Corrected .json path and added verbose HTTP logging.
+trend_scanner.py — Viral Content Discovery v7.7 (PHANTOM HYBRID)
+RESILIENCE: Reddit Scraper + YouTube Search Fallback.
+Guarantees content even if social mirrors are blocked.
 """
 
 import re
@@ -8,6 +9,7 @@ import json
 import time
 import random
 import logging
+import subprocess
 from curl_cffi import requests
 
 log = logging.getLogger("AutoClipAI.TrendScanner")
@@ -15,19 +17,27 @@ log = logging.getLogger("AutoClipAI.TrendScanner")
 # =====================================================================
 # CONFIGURATION
 # =====================================================================
+# Pruned list of Redlib instances (focusing on stability)
 REDLIB_INSTANCES = [
-    "redlib.pussthecat.org",
-    "l.opnxng.com",
-    "redlib.catsarch.com",
-    "safereddit.com",
     "redlib.net",
-    "redlib.ducks.party"
+    "safereddit.com",
+    "l.opnxng.com",
+    "redlib.catsarch.com"
 ]
 
 DEFAULT_SUBS = [
     "videos", "funny", "Unexpected", "nextfuckinglevel", "TikTokCringe", 
     "facepalm", "therewasanattempt", "WatchPeopleDieInside", "ContagiousLaughter",
     "AbruptChaos", "oddlysatisfying", "Damnthatsinteresting", "HolUp", "meirl"
+]
+
+# Primary keywords for fallback search
+FALLBACK_KEYWORDS = [
+    "trending tiktok compilation 2024",
+    "funniest videos of the week",
+    "most unexpected moments shorts",
+    "viral reddit stories videos",
+    "oddly satisfying compilation"
 ]
 
 def _extract_video_urls(text):
@@ -46,18 +56,13 @@ def _extract_video_urls(text):
     return list(set(urls))
 
 def _recursive_extract_urls(data):
-    """
-    Scans a JSON object (dict/list) recursively for social media URLs.
-    """
+    """Scans a JSON object recursively for social media URLs."""
     found = []
     if isinstance(data, dict):
-        for v in data.values():
-            found.extend(_recursive_extract_urls(v))
+        for v in data.values(): found.extend(_recursive_extract_urls(v))
     elif isinstance(data, list):
-        for item in data:
-            found.extend(_recursive_extract_urls(item))
-    elif isinstance(data, str):
-        found.extend(_extract_video_urls(data))
+        for item in data: found.extend(_recursive_extract_urls(item))
+    elif isinstance(data, str): found.extend(_extract_video_urls(data))
     return found
 
 def _normalize_yt(url):
@@ -71,98 +76,93 @@ def _normalize_yt(url):
 # REDDIT STEALTH ENGINE
 # =====================================================================
 def _fetch_via_redlib(sub, time_filter="week"):
-    """
-    Fallback: Scrapes data via Redlib. 
-    FIXED: Corrected URL path from /top/.json to /top.json
-    """
+    """Scrapes Reddit mirror with advanced stealth headers."""
     random.shuffle(REDLIB_INSTANCES)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
-    }
-    
     for inst in REDLIB_INSTANCES:
         try:
-            # CORRECT SYNTAX: r/sub/top.json?t=week
             url = f"https://{inst}/r/{sub}/top.json?t={time_filter}"
-            log.info(f"  [DISCOVERY] Calling: {url}")
-            
-            resp = requests.get(
-                url, 
-                impersonate="chrome110", 
-                headers=headers,
-                timeout=15
-            )
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Referer": f"https://{inst}/"
+            }
+            log.info(f"  [REDDIT] Querying {inst}...")
+            resp = requests.get(url, impersonate="chrome110", headers=headers, timeout=12)
             
             if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    if isinstance(data, dict) and 'data' in data:
-                        log.info(f"  [REDLIB] ✓ Success via {inst}")
-                        return data
-                except:
-                    log.warning(f"  [REDLIB] ⚠ {inst} returned non-JSON content.")
+                data = resp.json()
+                if isinstance(data, dict) and 'data' in data:
+                    log.info(f"  [REDLIB] ✓ Success via {inst}")
+                    return data
             else:
-                log.warning(f"  [REDLIB] ✗ {inst} failed with HTTP {resp.status_code}")
-                
-        except Exception as e:
-            log.debug(f"  [REDLIB] ✗ {inst} error: {str(e)}")
+                log.warning(f"  [REDLIB] ✗ {inst} (HTTP {resp.status_code})")
+        except:
             continue
-            
     return None
 
-def scan_reddit_for_viral_videos(custom_subs=None, time_filter="week", limit=30):
+def search_youtube_fallback(limit=10):
     """
-    Main Reddit Discovery: Stealth Brute Force v7.6.
+    Plan C: If Reddit is blocked, search YouTube directly via yt-dlp.
+    Guarantees that discovery always returns content.
     """
-    subs = list(DEFAULT_SUBS)
-    if custom_subs:
-        for s in custom_subs:
-            s_clean = s.strip().replace("r/", "")
-            if s_clean and s_clean not in subs: subs.append(s_clean)
-
-    found_videos = []
-    log.info(f"🕵️ Total Hunting Ground: {len(subs)} subreddits (Filter: {time_filter})")
-
-    for sub in subs:
-        log.info(f"  [REDDIT] Checking r/{sub}...")
-        data = _fetch_via_redlib(sub, time_filter)
-            
-        if data:
-            posts = data.get("data", {}).get("children", [])
-            log.info(f"    - Found {len(posts)} posts in r/{sub}.")
-            for post in posts:
-                pd = post.get("data", {})
-                urls = _recursive_extract_urls(pd)
-                for u in urls:
-                    found_videos.append({
-                        "url": _normalize_yt(u),
-                        "score": pd.get("score", 0),
-                        "title": pd.get("title", "")
-                    })
-        
-        time.sleep(random.uniform(1.0, 2.0))
-
-    # Sort
-    found_videos.sort(key=lambda x: x["score"], reverse=True)
-    unique_urls = list(dict.fromkeys([v["url"] for v in found_videos]))
+    log.info("🎞️  PLAN C: Starting YouTube Search Fallback...")
+    query = random.choice(FALLBACK_KEYWORDS)
+    log.info(f"  [YOUTUBE] Searching for: '{query}'")
     
-    log.info(f"✅ FINAL Discovery result: {len(unique_urls)} bangers identified.")
-    return {"urls": unique_urls}
+    found_urls = []
+    try:
+        # Using yt-dlp search pattern
+        cmd = [
+            "yt-dlp",
+            f"ytsearch{limit}:{query}",
+            "--get-id",
+            "--flat-playlist",
+            "--no-warnings"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            ids = result.stdout.strip().split("\n")
+            for vid_id in ids:
+                if vid_id:
+                    found_urls.append(f"https://www.youtube.com/watch?v={vid_id.strip()}")
+            log.info(f"  [YOUTUBE] ✓ Found {len(found_urls)} trending videos.")
+    except Exception as e:
+        log.error(f"  [YOUTUBE] ✗ Search failed: {e}")
+        
+    return found_urls
 
+# =====================================================================
+# MAIN ORCHESTRATOR
+# =====================================================================
 def discover_viral_content():
-    log.info("\n" + "🎯" * 20)
-    log.info("STARTING DISCOVERY: BANGER HUNTER v7.6")
-    log.info("🎯" * 20)
+    log.info("\n" + "🛡️" * 20)
+    log.info("STARTING DISCOVERY: PHANTOM HYBRID v7.7")
+    log.info("🛡️" * 20)
     
     all_urls = []
-    try:
-        reddit_res = scan_reddit_for_viral_videos()
-        all_urls.extend(reddit_res["urls"])
-    except Exception as e:
-        log.error(f"❌ Master Discovery failed: {e}")
+    
+    # 1. Primary: Reddit Scraper
+    subs = list(DEFAULT_SUBS)
+    log.info(f"🕵️ Scanning {len(subs)} subreddits via Redlib...")
+    for sub in subs:
+        data = _fetch_via_redlib(sub)
+        if data:
+            posts = data.get("data", {}).get("children", [])
+            for post in posts:
+                pd = post.get("data", {})
+                all_urls.extend([_normalize_yt(u) for u in _recursive_extract_urls(pd)])
         
+    # 2. Refined Dédoublonnage
     unique_total = list(dict.fromkeys(all_urls))
+    
+    # 3. Emergency Fallback: If Reddit is empty, use YouTube Search
+    if len(unique_total) < 5:
+        log.warning(f"⚠️ Low content count ({len(unique_total)}). Activating YouTube Fallback.")
+        youtube_urls = search_youtube_fallback()
+        unique_total.extend(youtube_urls)
+        
+    unique_total = list(dict.fromkeys(unique_total))
     log.info(f"\n🏆 GRAND TOTAL: {len(unique_total)} unique links discovered.")
     return unique_total
 
