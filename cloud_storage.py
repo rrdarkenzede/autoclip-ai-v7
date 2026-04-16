@@ -68,9 +68,12 @@ class GoogleDriveManager:
             results = self.service.files().list(
                 q=query, 
                 fields="files(id, name, createdTime)",
-                orderBy="createdTime"
+                orderBy="createdTime",
+                pageSize=100
             ).execute()
-            return results.get('files', [])
+            files = results.get('files', [])
+            log.info(f"📦 Stockpile status: {len(files)} items found in folder {folder_id}.")
+            return files
         except Exception as e:
             log.error(f"❌ Failed to list Drive files: {e}")
             return []
@@ -81,11 +84,15 @@ class GoogleDriveManager:
         if not files: return None, None, None
             
         oldest_mp4 = next((f for f in files if f['name'].lower().endswith('.mp4')), None)
-        if not oldest_mp4: return None, None, None
+        if not oldest_mp4:
+            log.info("ℹ️ No .mp4 files found in Stockpile.")
+            return None, None, None
             
         base_name = os.path.splitext(oldest_mp4['name'])[0]
+        # Search for matching .json
         matching_json = next((f for f in files if f['name'].lower() == f"{base_name.lower()}.json"), None)
-                
+        
+        log.info(f"🎯 Oldest candidate detected: {oldest_mp4['name']} (created: {oldest_mp4.get('createdTime')})")
         return oldest_mp4['id'], (matching_json['id'] if matching_json else None), base_name
 
     def download_file(self, file_id, dest_path):

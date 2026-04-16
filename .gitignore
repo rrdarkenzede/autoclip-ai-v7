@@ -1,42 +1,7 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+﻿*.mp4
+*.json
+github_secrets_values.txt
 .env
-.venv
-env/
-venv/
-
-# AutoClipAI Sessions & Cache (IMPORTANT)
-tiktok_session/
-youtube_session/
-logs/
-temp/
+__pycache__/
 downloads/
-processed_urls.json
-local_memory.json
-strategy_state.json
-monetization_state.json
-
-# Binaries & Large Files
-bgutil-pot.exe
-ffmpeg/
-ffmpeg-master-latest-win64-gpl/
-*.exe
-*.zip
-*.7z
-*.tar.gz
-
-# Media (Stockpile)
-clips/
-stockpile/
-*.mp4
-*.mkv
-*.avi
-*.mp3
-*.wav
-
-# IDE
-.vscode/
-.idea/
-.gemini/
+*.log

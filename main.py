@@ -1,60 +1,167 @@
 # -*- coding: utf-8 -*-
 """
-main.py — AutoClipAI v7.2 — OPERATION PUBLICATION
+main.py — AutoClipAI v7.4 — FULL CYCLE AUTOMATION
+Orchestrates: 
+1. Publication Mission (Fetch from Drive -> Publish -> Cleanup)
+2. Discovery Mission (Scrape Social -> Analysis -> Stockpile Drive)
 """
-import os, json, time, sys, argparse, random, logging
+
+import os
+import json
+import time
+import sys
+import argparse
+import random
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
+
+# CRITICAL: Configure logging BEFORE local imports to capture initialization logs
+load_dotenv()
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+log = logging.getLogger("AutoClipAI.Main")
+
+# Local Imports (Now safe to import)
 from downloader import search_trending_videos, fill_stockpile
 from publisher import publish_to_tiktok, publish_to_youtube_shorts
 from memory import log_post
 from strategy import get_active_queries
 from cloud_storage import drive_manager
 from omega_bypass import omega
-
-load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("AutoClipAI.Main")
+from trend_scanner import discover_viral_content
 
 PUBLISH_TO_TIKTOK = os.environ.get("PUBLISH_TO_TIKTOK", "true").lower() == "true"
 PUBLISH_TO_YOUTUBE = os.environ.get("PUBLISH_TO_YOUTUBE", "true").lower() == "true"
 
 def run_publication_mission():
-    log.info("🚀 STARTING OPERATION PUBLICATION")
+    """
+    Attempts to publish up to 5 oldest videos from the Stockpile (Drive).
+    """
+    log.info("🚀 MISSION: Publication (Stockpile -> Socials)")
+    published_count = 0
+    
     for i in range(5):
         video_id, json_id, base_name = drive_manager.get_oldest_stockpile_video_and_metadata()
-        if not video_id: break
+        if not video_id:
+            log.info("📭 Stockpile empty. No more videos to publish.")
+            break
         
-        local_v, local_j = f"temp_{i}.mp4", f"temp_{i}.json"
-        if drive_manager.download_file(video_id, local_v):
-            meta = {"title": base_name}
-            if json_id and drive_manager.download_file(json_id, local_j):
-                with open(local_j, 'r') as f: meta = json.load(f)
+        log.info(f"📦 Found video: {base_name}. Starting download...")
+        local_v, local_j = f"publish_tmp_{i}.mp4", f"publish_tmp_{i}.json"
+        
+        try:
+            if drive_manager.download_file(video_id, local_v):
+                meta = {"title": base_name}
+                if json_id and drive_manager.download_file(json_id, local_j):
+                    with open(local_j, 'r', encoding='utf-8') as f:
+                        meta = json.load(f)
+                
+                success = False
+                # Try TikTok
+                if PUBLISH_TO_TIKTOK:
+                    log.info(f"📱 Uploading '{meta['title']}' to TikTok...")
+                    if publish_to_tiktok(local_v, meta):
+                        log_post(meta, "tiktok")
+                        success = True
+                
+                # Try YouTube
+                if PUBLISH_TO_YOUTUBE:
+                    log.info(f"🎥 Uploading '{meta['title']}' to YouTube Shorts...")
+                    if publish_to_youtube_shorts(local_v, meta):
+                        log_post(meta, "youtube")
+                        success = True
+                
+                if success:
+                    log.info(f"✅ Success! Cleaning up Drive storage for: {base_name}")
+                    drive_manager.delete_file(video_id)
+                    if json_id: drive_manager.delete_file(json_id)
+                    published_count += 1
+                
+                # Local cleanup
+                for f_path in [local_v, local_j]:
+                    if os.path.exists(f_path): os.remove(f_path)
+                    
+                time.sleep(random.randint(60, 120)) # Avoid anti-bot
+        except Exception as e:
+            log.error(f"❌ Critical error in publication loop: {e}")
+            break
             
-            success = False
-            if PUBLISH_TO_TIKTOK and publish_to_tiktok(local_v, meta):
-                log_post(meta, "tiktok"); success = True
-            if PUBLISH_TO_YOUTUBE and publish_to_youtube_shorts(local_v, meta):
-                log_post(meta, "youtube"); success = True
-            
-            if success:
-                drive_manager.delete_file(video_id)
-                if json_id: drive_manager.delete_file(json_id)
-            
-            for f in [local_v, local_j]: 
-                if os.path.exists(f): os.remove(f)
-            time.sleep(random.randint(30, 60))
+    return published_count
+
+def run_discovery_mission():
+    """
+    Scrapes social media, analyzes content, and fills the Stockpile (Drive).
+    """
+    log.info("🔎 MISSION: Discovery (Scraping -> Stockpile)")
+    queries = get_active_queries()
+    
+    # 1. Broad Discovery (Reddit/Twitter)
+    viral_urls = discover_viral_content()
+    
+    # 2. Filtering and Stockpile Filling
+    if not viral_urls:
+        log.warning("⚠️ No new viral links found in this cycle.")
+        return
+        
+    log.info(f"🔥 Found {len(viral_urls)} candidates. Processing...")
+    for url in viral_urls:
+        try:
+            local_path = fill_stockpile(url)
+            if local_path and os.path.exists(local_path):
+                # Metadata is generated by the analyzer during fill_stockpile or downloader
+                # We assume fill_stockpile handles analysis and metadata file creation
+                json_path = local_path.replace(".mp4", ".json")
+                
+                # Upload to Drive
+                v_id = drive_manager.upload_file(local_path)
+                if v_id and os.path.exists(json_path):
+                    drive_manager.upload_file(json_path)
+                    
+                # Cleanup local
+                for p in [local_path, json_path]:
+                    if os.path.exists(p): os.remove(p)
+                
+                log.info(f"✅ Video secured in Cloud Stockpile.")
+                time.sleep(10)
+        except Exception as e:
+            log.error(f"❌ Discovery error for {url}: {e}")
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str)
+    parser.add_argument("--mode", type=str, default="2", help="1: Discovery Only, 2: Full Cycle, 3: Publish Only")
     args = parser.parse_args()
-    omega.start_sidecar()
+
+    log.info(f"🦾 AutoClipAI v7.4 Booting (Mode: {args.mode})")
+    
+    # 🧬 START OMEGA (For YT Downloads & Publishing)
     try:
-        if args.mode == "2" or args.mode == "5":
+        omega.start_sidecar()
+    except Exception as e:
+        log.warning(f"⚠️ OMEGA Warning: {e}. Continuing in phantom mode...")
+
+    try:
+        # MODE 2: FULL CYCLE (Publish what we have, then find more)
+        if args.mode == "2":
             run_publication_mission()
+            run_discovery_mission()
+            
+        elif args.mode == "1":
+            run_discovery_mission()
+            
+        elif args.mode == "3":
+            run_publication_mission()
+            
+        log.info("🏁 Cycle completed successfully.")
+        
+    except Exception as e:
+        log.critical(f"💥 SHUTDOWN: Uncaught Exception: {e}", exc_info=True)
     finally:
         omega.stop_sidecar()
+        log.info("🔌 OMEGA Sidecar stopped. Goodbye.")
 
 if __name__ == "__main__":
     main()
