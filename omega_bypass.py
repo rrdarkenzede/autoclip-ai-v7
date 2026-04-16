@@ -1,7 +1,7 @@
 """
-omega_bypass.py - Sidecar Manager for AutoClipAI v7.0 OMEGA
-Handles the lifecycle of the bgutil-pot process and provides 
-configuration for yt-dlp including TLS fingerprinting.
+omega_bypass.py - Sidecar Manager for AutoClipAI v7.2
+Handles the lifecycle of the bgutil-pot process and provides configuration for yt-dlp.
+FIXED: Correct arguments for the Rust binary server mode (--host and --port).
 """
 
 import subprocess
@@ -22,7 +22,6 @@ def get_binary_path():
     # Auto-fetch Linux binary if missing (Cloud survival)
     if is_linux and not os.path.exists(path):
         log.info("🌐 Linux detected. Fetching OMEGA binary (bgutil-pot)...")
-        # URL for the latest Rust implementation binary
         url = "https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/latest/download/bgutil-pot-linux-x86_64"
         try:
             r = requests.get(url, allow_redirects=True)
@@ -51,26 +50,25 @@ class OmegaBypassManager:
 
         log.info(f"🧬 Starting OMEGA Sidecar (PO-Token Generator) on port {PORT}...")
         try:
-            # Command to run the binary as a server
-            cmd = [BINARY_PATH, "server", "--address", f"127.0.0.1:{PORT}"]
+            # CRITICAL FIX: The Rust binary uses 'server --host X --port Y'
+            # NOT '--address' which caused the crash.
+            cmd = [BINARY_PATH, "server", "--host", "127.0.0.1", "--port", str(PORT)]
             
-            # Use subprocess.PIPE to avoid cluttering logs in GH Actions
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
                 text=True
             )
             
-            # Wait a few seconds for server to bind
-            time.sleep(2)
+            # Health Check: Wait and verify if it's still running
+            time.sleep(3)
             if self.process.poll() is None:
                 self.is_running = True
                 log.info(f"✅ OMEGA Sidecar ACTIVE (PID: {self.process.pid})")
                 return True
             else:
-                out, err = self.process.communicate()
+                _, err = self.process.communicate()
                 log.error(f"❌ OMEGA crashed on startup: {err}")
                 return False
         except Exception as e:
@@ -81,7 +79,10 @@ class OmegaBypassManager:
         if self.process:
             log.info("🛑 Stopping OMEGA Sidecar...")
             self.process.terminate()
-            self.process.wait()
+            try:
+                self.process.wait(timeout=5)
+            except:
+                self.process.kill()
             self.is_running = False
 
     def get_ydl_opts(self, base_opts=None):
@@ -89,7 +90,6 @@ class OmegaBypassManager:
         if base_opts is None:
             base_opts = {}
         
-        # OMEGA settings
         omega_args = {
             "extractor_args": {
                 "youtube": {
@@ -98,7 +98,6 @@ class OmegaBypassManager:
                     "player_client": ["tv_embedded", "ios", "webapp"],
                 }
             },
-            # TLS Impersonation (requires curl_cffi)
             "impersonate": "safari-ios-17",
         }
 
@@ -114,15 +113,3 @@ class OmegaBypassManager:
 
 # Singleton instance
 omega = OmegaBypassManager()
-
-if __name__ == "__main__":
-    # Test
-    logging.basicConfig(level=logging.INFO)
-    try:
-        success = omega.start_sidecar()
-        if success:
-            print("Sidecar is running. Press Ctrl+C to stop.")
-            while True:
-                time.sleep(1)
-    except KeyboardInterrupt:
-        omega.stop_sidecar()

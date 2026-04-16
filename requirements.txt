@@ -2,6 +2,7 @@ yt-dlp
 google-genai
 ffmpeg-python
 playwright
+playwright-stealth
 supabase
 python-dotenv
 schedule
@@ -12,3 +13,4 @@ google-auth-oauthlib
 pydrive2
 requests
 Pillow
+curl_cffi

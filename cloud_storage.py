@@ -9,7 +9,6 @@ import io
 log = logging.getLogger("AutoClipAI.Cloud")
 
 # Configuration from Environment
-# In GH Actions/Colab, we set these via secrets or environment variables
 DRIVE_CREDENTIALS_JSON = os.environ.get("GOOGLE_DRIVE_CREDENTIALS")
 STOCKPILE_FOLDER_ID = os.environ.get("GOOGLE_DRIVE_FOLDER_ID") # The 'Stockpile' on Drive
 
@@ -56,44 +55,64 @@ class GoogleDriveManager:
             return None
 
     def list_files(self, folder_id=None):
-        """Lists files in the stockpile folder."""
+        """Lists files in the stockpile folder, ordered by creation time (Oldest first)."""
         if not self.service: return []
         
         folder_id = folder_id or STOCKPILE_FOLDER_ID
+        if not folder_id:
+            log.warning("⚠️ No STOCKPILE_FOLDER_ID configured.")
+            return []
+            
         query = f"'{folder_id}' in parents and trashed = false"
         try:
-            results = self.service.files().list(q=query, fields="files(id, name)").execute()
+            results = self.service.files().list(
+                q=query, 
+                fields="files(id, name, createdTime)",
+                orderBy="createdTime"
+            ).execute()
             return results.get('files', [])
         except Exception as e:
             log.error(f"❌ Failed to list Drive files: {e}")
             return []
 
+    def get_oldest_stockpile_video_and_metadata(self):
+        """Finds oldest .mp4 and its matching .json on Drive."""
+        files = self.list_files()
+        if not files: return None, None, None
+            
+        oldest_mp4 = next((f for f in files if f['name'].lower().endswith('.mp4')), None)
+        if not oldest_mp4: return None, None, None
+            
+        base_name = os.path.splitext(oldest_mp4['name'])[0]
+        matching_json = next((f for f in files if f['name'].lower() == f"{base_name.lower()}.json"), None)
+                
+        return oldest_mp4['id'], (matching_json['id'] if matching_json else None), base_name
+
     def download_file(self, file_id, dest_path):
         """Downloads a file from Drive to local path."""
         if not self.service: return False
-        
-        request = self.service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
         try:
+            request = self.service.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
             while done is False:
                 status, done = downloader.next_chunk()
-            
             with open(dest_path, 'wb') as f:
                 f.write(fh.getvalue())
             return True
         except Exception as e:
-            log.error(f"❌ Download failed: {e}")
+            log.error(f"❌ Download failed for {file_id}: {e}")
             return False
 
     def delete_file(self, file_id):
         """Deletes a file from Drive."""
-        if not self.service: return
+        if not self.service or not file_id: return
         try:
             self.service.files().delete(fileId=file_id).execute()
+            log.info(f"🗑️ Deleted file ID {file_id} from Drive.")
         except Exception as e:
-            log.error(f"❌ Delete failed: {e}")
+            log.error(f"❌ Delete failed for {file_id}: {e}")
 
 # Global Instance
 drive_manager = GoogleDriveManager()
